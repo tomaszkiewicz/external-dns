@@ -98,6 +98,15 @@ func TargetsFromTargetAnnotation(annotations map[string]string) endpoint.Targets
 	return targets
 }
 
+// IgnoreIPsFromAnnotations extracts IPs to ignore from the ignore-ips annotation.
+func IgnoreIPsFromAnnotations(annotations map[string]string) []string {
+	ignoreIPsAnnotation, ok := annotations[IgnoreIPsKey]
+	if !ok || ignoreIPsAnnotation == "" {
+		return nil
+	}
+	return SplitHostnameAnnotation(ignoreIPsAnnotation)
+}
+
 // HostnamesFromAnnotations extracts the hostnames from the given annotations map.
 // It returns a slice of hostnames if the HostnameKey annotation is present, otherwise it returns nil.
 func HostnamesFromAnnotations(input map[string]string) []string {

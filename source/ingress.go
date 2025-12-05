@@ -191,7 +191,7 @@ func (sc *ingressSource) endpointsFromTemplate(ing *networkv1.Ingress) ([]*endpo
 
 	targets := annotations.TargetsFromTargetAnnotation(ing.Annotations)
 	if len(targets) == 0 {
-		targets = targetsFromIngressStatus(ing.Status)
+		targets = targetsFromIngressStatus(ing.Status, ing.Annotations)
 	}
 
 	providerSpecific, setIdentifier := annotations.ProviderSpecificAnnotations(ing.Annotations)
@@ -280,7 +280,7 @@ func endpointsFromIngress(ing *networkv1.Ingress, ignoreHostnameAnnotation bool,
 	targets := annotations.TargetsFromTargetAnnotation(ing.Annotations)
 
 	if len(targets) == 0 {
-		targets = targetsFromIngressStatus(ing.Status)
+		targets = targetsFromIngressStatus(ing.Status, ing.Annotations)
 	}
 
 	providerSpecific, setIdentifier := annotations.ProviderSpecificAnnotations(ing.Annotations)
@@ -334,12 +334,15 @@ func endpointsFromIngress(ing *networkv1.Ingress, ignoreHostnameAnnotation bool,
 	return endpoints
 }
 
-func targetsFromIngressStatus(status networkv1.IngressStatus) endpoint.Targets {
+func targetsFromIngressStatus(status networkv1.IngressStatus, ingressAnnotations map[string]string) endpoint.Targets {
+	ignoreIPs := annotations.IgnoreIPsFromAnnotations(ingressAnnotations)
 	var targets endpoint.Targets
 
 	for _, lb := range status.LoadBalancer.Ingress {
 		if lb.IP != "" {
-			targets = append(targets, lb.IP)
+			if !containsString(ignoreIPs, lb.IP) {
+				targets = append(targets, lb.IP)
+			}
 		}
 		if lb.Hostname != "" {
 			targets = append(targets, lb.Hostname)
@@ -347,6 +350,15 @@ func targetsFromIngressStatus(status networkv1.IngressStatus) endpoint.Targets {
 	}
 
 	return targets
+}
+
+func containsString(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
 
 func (sc *ingressSource) AddEventHandler(ctx context.Context, handler func()) {

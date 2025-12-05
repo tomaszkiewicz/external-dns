@@ -675,14 +675,18 @@ func extractServiceExternalName(svc *v1.Service) endpoint.Targets {
 
 func extractLoadBalancerTargets(svc *v1.Service, resolveLoadBalancerHostname bool) endpoint.Targets {
 	if len(svc.Spec.ExternalIPs) > 0 {
-		return svc.Spec.ExternalIPs
+		return filterIgnoredIPs(svc.Spec.ExternalIPs, svc.Annotations)
 	}
+
+	ignoreIPs := annotations.IgnoreIPsFromAnnotations(svc.Annotations)
 
 	// Create a corresponding endpoint for each configured external entrypoint.
 	var targets endpoint.Targets
 	for _, lb := range svc.Status.LoadBalancer.Ingress {
 		if lb.IP != "" {
-			targets = append(targets, lb.IP)
+			if !contains(ignoreIPs, lb.IP) {
+				targets = append(targets, lb.IP)
+			}
 		}
 		if lb.Hostname != "" {
 			if resolveLoadBalancerHostname {
@@ -692,7 +696,10 @@ func extractLoadBalancerTargets(svc *v1.Service, resolveLoadBalancerHostname boo
 					continue
 				}
 				for _, ip := range ips {
-					targets = append(targets, ip.String())
+					ipStr := ip.String()
+					if !contains(ignoreIPs, ipStr) {
+						targets = append(targets, ipStr)
+					}
 				}
 			} else {
 				targets = append(targets, lb.Hostname)
@@ -951,4 +958,30 @@ func conditionToBool(v *bool) bool {
 		return true // nil should be interpreted as "true" as per EndpointConditions spec
 	}
 	return *v
+}
+
+// contains checks if a string slice contains a specific string.
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// filterIgnoredIPs filters out IPs that are in the ignore list from annotations.
+func filterIgnoredIPs(targets endpoint.Targets, svcAnnotations map[string]string) endpoint.Targets {
+	ignoreIPs := annotations.IgnoreIPsFromAnnotations(svcAnnotations)
+	if len(ignoreIPs) == 0 {
+		return targets
+	}
+
+	var filtered endpoint.Targets
+	for _, target := range targets {
+		if !contains(ignoreIPs, target) {
+			filtered = append(filtered, target)
+		}
+	}
+	return filtered
 }
