@@ -268,6 +268,14 @@ kubectl annotate service nginx "external-dns.alpha.kubernetes.io/internal-hostna
 
 If the service is not of type Loadbalancer you need the --publish-internal-services flag.
 
+Optionally, you can exclude specific IPs from being used as DNS targets by using the `external-dns.alpha.kubernetes.io/ignore-ips` annotation:
+
+```console
+kubectl annotate service nginx "external-dns.alpha.kubernetes.io/ignore-ips=10.0.0.1,10.0.0.2"
+```
+
+This is useful when a LoadBalancer or Ingress has multiple IPs but you only want certain ones to be registered in DNS.
+
 Locally run a single sync loop of ExternalDNS.
 
 ```console
