@@ -63,6 +63,7 @@ type ingressSource struct {
 	ignoreIngressTLSSpec     bool
 	ignoreIngressRulesSpec   bool
 	labelSelector            labels.Selector
+	ignoreIPs                []string
 }
 
 // NewIngressSource creates a new ingressSource with the given config.
@@ -72,7 +73,8 @@ func NewIngressSource(
 	namespace, annotationFilter, fqdnTemplate string,
 	combineFqdnAnnotation, ignoreHostnameAnnotation, ignoreIngressTLSSpec, ignoreIngressRulesSpec bool,
 	labelSelector labels.Selector,
-	ingressClassNames []string) (Source, error) {
+	ingressClassNames []string,
+	ignoreIPs []string) (Source, error) {
 	tmpl, err := fqdn.ParseTemplate(fqdnTemplate)
 	if err != nil {
 		return nil, err
@@ -120,6 +122,7 @@ func NewIngressSource(
 		ignoreIngressTLSSpec:     ignoreIngressTLSSpec,
 		ignoreIngressRulesSpec:   ignoreIngressRulesSpec,
 		labelSelector:            labelSelector,
+		ignoreIPs:                ignoreIPs,
 	}
 	return sc, nil
 }
@@ -191,7 +194,7 @@ func (sc *ingressSource) endpointsFromTemplate(ing *networkv1.Ingress) ([]*endpo
 
 	targets := annotations.TargetsFromTargetAnnotation(ing.Annotations)
 	if len(targets) == 0 {
-		targets = targetsFromIngressStatus(ing.Status, ing.Annotations)
+		targets = sc.targetsFromIngressStatus(ing.Status, ing.Annotations)
 	}
 
 	providerSpecific, setIdentifier := annotations.ProviderSpecificAnnotations(ing.Annotations)
@@ -280,7 +283,7 @@ func endpointsFromIngress(ing *networkv1.Ingress, ignoreHostnameAnnotation bool,
 	targets := annotations.TargetsFromTargetAnnotation(ing.Annotations)
 
 	if len(targets) == 0 {
-		targets = targetsFromIngressStatus(ing.Status, ing.Annotations)
+		targets = sc.targetsFromIngressStatus(ing.Status, ing.Annotations)
 	}
 
 	providerSpecific, setIdentifier := annotations.ProviderSpecificAnnotations(ing.Annotations)
@@ -334,8 +337,8 @@ func endpointsFromIngress(ing *networkv1.Ingress, ignoreHostnameAnnotation bool,
 	return endpoints
 }
 
-func targetsFromIngressStatus(status networkv1.IngressStatus, ingressAnnotations map[string]string) endpoint.Targets {
-	ignoreIPs := annotations.IgnoreIPsFromAnnotations(ingressAnnotations)
+func (sc *ingressSource) targetsFromIngressStatus(status networkv1.IngressStatus, ingressAnnotations map[string]string) endpoint.Targets {
+	ignoreIPs := sc.mergeIgnoreIPs(ingressAnnotations)
 	var targets endpoint.Targets
 
 	for _, lb := range status.LoadBalancer.Ingress {
@@ -350,6 +353,21 @@ func targetsFromIngressStatus(status networkv1.IngressStatus, ingressAnnotations
 	}
 
 	return targets
+}
+
+// mergeIgnoreIPs combines global ignoreIPs with annotation-based ignoreIPs.
+func (sc *ingressSource) mergeIgnoreIPs(ingressAnnotations map[string]string) []string {
+	annotationIPs := annotations.IgnoreIPsFromAnnotations(ingressAnnotations)
+	if len(sc.ignoreIPs) == 0 {
+		return annotationIPs
+	}
+	if len(annotationIPs) == 0 {
+		return sc.ignoreIPs
+	}
+	merged := make([]string, 0, len(sc.ignoreIPs)+len(annotationIPs))
+	merged = append(merged, sc.ignoreIPs...)
+	merged = append(merged, annotationIPs...)
+	return merged
 }
 
 func containsString(slice []string, item string) bool {

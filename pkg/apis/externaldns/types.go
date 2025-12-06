@@ -220,6 +220,7 @@ type Config struct {
 	ExcludeUnschedulable                          bool
 	EmitEvents                                    []string
 	ForceDefaultTargets                           bool
+	IgnoreIPs                                     []string
 }
 
 var defaultConfig = &Config{
@@ -387,6 +388,7 @@ var defaultConfig = &Config{
 	WebhookServer:                false,
 	ZoneIDFilter:                 []string{},
 	ForceDefaultTargets:          false,
+	IgnoreIPs:                    []string{},
 }
 
 var providerNames = []string{
@@ -647,6 +649,8 @@ func bindFlags(b FlagBinder, cfg *Config) {
 	b.StringsVar("target-net-filter", "Limit possible targets by a net filter; specify multiple times for multiple possible nets (optional)", nil, &cfg.TargetNetFilter)
 	b.BoolVar("traefik-enable-legacy", "Enable legacy listeners on Resources under the traefik.containo.us API Group", defaultConfig.TraefikEnableLegacy, &cfg.TraefikEnableLegacy)
 	b.BoolVar("traefik-disable-new", "Disable listeners on Resources under the traefik.io API Group", defaultConfig.TraefikDisableNew, &cfg.TraefikDisableNew)
+
+	b.StringsVar("ignore-ips", "IP addresses to ignore when creating DNS records; specify multiple times for multiple IPs (optional)", nil, &cfg.IgnoreIPs)
 
 	b.StringsVar("events-emit", "Events that should be emitted. Specify multiple times for multiple events support (optional, default: none, expected: RecordReady, RecordDeleted, RecordError)", defaultConfig.EmitEvents, &cfg.EmitEvents)
 

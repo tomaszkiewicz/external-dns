@@ -82,6 +82,7 @@ type serviceSource struct {
 	nodeInformer                   coreinformers.NodeInformer
 	serviceTypeFilter              *serviceTypes
 	exposeInternalIPv6             bool
+	ignoreIPs                      []string
 
 	// process Services with legacy annotations
 	compatibility string
@@ -99,6 +100,7 @@ func NewServiceSource(
 	labelSelector labels.Selector,
 	resolveLoadBalancerHostname,
 	listenEndpointEvents, exposeInternalIPv6 bool,
+	ignoreIPs []string,
 ) (Source, error) {
 	tmpl, err := fqdn.ParseTemplate(fqdnTemplate)
 	if err != nil {
@@ -224,6 +226,7 @@ func NewServiceSource(
 		resolveLoadBalancerHostname:    resolveLoadBalancerHostname,
 		listenEndpointEvents:           listenEndpointEvents,
 		exposeInternalIPv6:             exposeInternalIPv6,
+		ignoreIPs:                      ignoreIPs,
 	}, nil
 }
 
@@ -626,7 +629,7 @@ func (sc *serviceSource) generateEndpoints(svc *v1.Service, hostname string, pro
 			if useClusterIP {
 				targets = extractServiceIps(svc)
 			} else {
-				targets = extractLoadBalancerTargets(svc, sc.resolveLoadBalancerHostname)
+				targets = sc.extractLoadBalancerTargets(svc)
 			}
 		case v1.ServiceTypeClusterIP:
 			if svc.Spec.ClusterIP == v1.ClusterIPNone {
@@ -673,12 +676,12 @@ func extractServiceExternalName(svc *v1.Service) endpoint.Targets {
 	return endpoint.Targets{svc.Spec.ExternalName}
 }
 
-func extractLoadBalancerTargets(svc *v1.Service, resolveLoadBalancerHostname bool) endpoint.Targets {
+func (sc *serviceSource) extractLoadBalancerTargets(svc *v1.Service) endpoint.Targets {
 	if len(svc.Spec.ExternalIPs) > 0 {
-		return filterIgnoredIPs(svc.Spec.ExternalIPs, svc.Annotations)
+		return sc.filterIgnoredIPs(svc.Spec.ExternalIPs, svc.Annotations)
 	}
 
-	ignoreIPs := annotations.IgnoreIPsFromAnnotations(svc.Annotations)
+	ignoreIPs := sc.mergeIgnoreIPs(svc.Annotations)
 
 	// Create a corresponding endpoint for each configured external entrypoint.
 	var targets endpoint.Targets
@@ -689,7 +692,7 @@ func extractLoadBalancerTargets(svc *v1.Service, resolveLoadBalancerHostname boo
 			}
 		}
 		if lb.Hostname != "" {
-			if resolveLoadBalancerHostname {
+			if sc.resolveLoadBalancerHostname {
 				ips, err := net.LookupIP(lb.Hostname)
 				if err != nil {
 					log.Errorf("Unable to resolve %q: %v", lb.Hostname, err)
@@ -970,9 +973,24 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-// filterIgnoredIPs filters out IPs that are in the ignore list from annotations.
-func filterIgnoredIPs(targets endpoint.Targets, svcAnnotations map[string]string) endpoint.Targets {
-	ignoreIPs := annotations.IgnoreIPsFromAnnotations(svcAnnotations)
+// mergeIgnoreIPs combines global ignoreIPs with annotation-based ignoreIPs.
+func (sc *serviceSource) mergeIgnoreIPs(svcAnnotations map[string]string) []string {
+	annotationIPs := annotations.IgnoreIPsFromAnnotations(svcAnnotations)
+	if len(sc.ignoreIPs) == 0 {
+		return annotationIPs
+	}
+	if len(annotationIPs) == 0 {
+		return sc.ignoreIPs
+	}
+	merged := make([]string, 0, len(sc.ignoreIPs)+len(annotationIPs))
+	merged = append(merged, sc.ignoreIPs...)
+	merged = append(merged, annotationIPs...)
+	return merged
+}
+
+// filterIgnoredIPs filters out IPs that are in the ignore list from annotations or global config.
+func (sc *serviceSource) filterIgnoredIPs(targets endpoint.Targets, svcAnnotations map[string]string) endpoint.Targets {
+	ignoreIPs := sc.mergeIgnoreIPs(svcAnnotations)
 	if len(ignoreIPs) == 0 {
 		return targets
 	}
